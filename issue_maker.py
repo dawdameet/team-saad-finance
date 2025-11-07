@@ -14,7 +14,7 @@ from pathlib import Path
 # =========================
 # CONFIGURATION
 # =========================
-REPO = "Rishpal27/Arya-Tasks"  # <--- Fill in manually, e.g. "org/fintech-project"
+REPO = "dawdameet/team-saad-finance"  # <--- Fill in manually, e.g. "org/fintech-project"
 
 MARKDOWN_FILE = "./detailed_bugs_ordered.md"
 
