@@ -16,3 +16,4 @@ backend/models/checkpoints/
 .env.development
 .env.production
 .env.test
+backend/venv
