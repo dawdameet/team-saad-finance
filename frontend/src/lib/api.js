@@ -1,0 +1,113 @@
+// frontend/src/lib/api.js
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+
+function getToken(){ return localStorage.getItem('token') || ''; }
+
+// Explicit auth helpers
+async function register(email, password, full_name=''){
+  const r = await fetch(`${API_BASE}/api/auth/register`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ email, password, full_name })
+  });
+  if(!r.ok){
+    const txt = await r.text().catch(()=> '');
+    throw new Error(txt || `Register failed (${r.status})`);
+  }
+  const data = await r.json();
+  localStorage.setItem('token', data.access_token);
+  return data;
+}
+
+async function login(email, password){
+  const r = await fetch(`${API_BASE}/api/auth/login`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ email, password })
+  });
+  if(!r.ok){
+    const txt = await r.text().catch(()=> '');
+    throw new Error(txt || `Login failed (${r.status})`);
+  }
+  const data = await r.json();
+  localStorage.setItem('token', data.access_token);
+  return data;
+}
+
+async function ensureAuth(email='demo@demo.com', password='demo123'){
+  const t = getToken();
+  if(t) return t;
+  // Use a unique, persisted demo email to avoid collisions
+  const persistedEmail = localStorage.getItem('demo_email') || email || `demo+${Date.now()}@demo.com`;
+  if(!localStorage.getItem('demo_email')){
+    // If using the default demo email, generate a unique one
+    const uniqueEmail = email === 'demo@demo.com' ? `demo+${Date.now()}@demo.com` : persistedEmail;
+    localStorage.setItem('demo_email', uniqueEmail);
+  }
+  const finalEmail = localStorage.getItem('demo_email') || persistedEmail;
+
+  const h = { 'Content-Type':'application/json' };
+  try{
+    const r = await fetch(`${API_BASE}/api/auth/register`, {
+      method:'POST', headers:h,
+      body: JSON.stringify({ email: finalEmail, password, full_name:'Demo User' })
+    });
+    if(!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    localStorage.setItem('token', data.access_token);
+    return data.access_token;
+  }catch(_){
+    const r2 = await fetch(`${API_BASE}/api/auth/login`, {
+      method:'POST', headers:h,
+      body: JSON.stringify({ email: finalEmail, password })
+    });
+    if(!r2.ok) throw new Error(await r2.text());
+    const data2 = await r2.json();
+    localStorage.setItem('token', data2.access_token);
+    return data2.access_token;
+  }
+}
+
+// One-shot retry on 401: acquire token then retry the same call
+async function api(path, { method='GET', body, headers={} } = {}, _retried=false){
+  const h = { 'Content-Type':'application/json', ...headers };
+  const token = getToken();
+  if(token) h['Authorization'] = 'Bearer ' + token;
+
+  const res = await fetch(`${API_BASE}${path}`, { method, headers: h, body: body ? JSON.stringify(body) : undefined });
+
+  // If 401 and we haven’t retried yet, ensure auth then retry once
+  if(res.status === 401 && !_retried){
+    // Clear stale/invalid token so ensureAuth does not short-circuit
+    localStorage.removeItem('token');
+    await ensureAuth();
+    return api(path, { method, body, headers }, true);
+  }
+
+  if(!res.ok){
+    const txt = await res.text().catch(()=> '');
+    throw new Error(`API ${method} ${path} -> ${res.status}: ${txt || res.statusText}`);
+  }
+
+  const ct = res.headers.get('content-type') || '';
+  if(ct.includes('application/json')) return res.json();
+  return res;
+}
+
+function logout(){
+  localStorage.removeItem('token');
+}
+
+export { API_BASE, api, ensureAuth, logout, register, login };
+
+// Profile helpers
+async function getMe(){
+  return api('/api/users/me');
+}
+
+async function updateMe({ full_name, password }){
+  const body = {};
+  if(typeof full_name !== 'undefined') body.full_name = full_name;
+  if(password) body.password = password;
+  return api('/api/users/me', { method:'PUT', body });
+}
+
+export { getMe, updateMe };
